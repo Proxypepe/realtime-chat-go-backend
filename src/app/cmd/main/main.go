@@ -2,56 +2,36 @@ package main
 
 import (
 	"fmt"
-	"github.com/gorilla/websocket"
+	"github.com/Proxypepe/realtime-chat-go-backend/src/app/pkg/websocket"
 	"log"
 	"net/http"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-func reader(conn *websocket.Conn) {
-	for {
-		message, p, err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		fmt.Println(string(p))
-
-		if err := conn.WriteMessage(message, p); err != nil {
-			log.Println(err)
-			return
-		}
-	}
-}
-
-func serveWs(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.Host)
-
-	ws, err := upgrader.Upgrade(w, r, nil)
-
+func serveWs(pool *websocket.Pool, w http.ResponseWriter, r *http.Request) {
+	fmt.Println("WebSocket Endpoint Hit")
+	ws, err := websocket.Upgrade(w, r)
 	if err != nil {
-		log.Println(err)
+		fmt.Fprintf(w, "%+V\n", err)
 	}
 
-	reader(ws)
+	client := &websocket.Client{
+		Conn: ws,
+		Pool: pool,
+	}
+	pool.Register <- client
+	client.Read()
 }
 
 func setupRoutes() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Simple Server")
+	pool := websocket.NewPool()
+	go pool.Start()
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		serveWs(pool, w, r)
 	})
-	http.HandleFunc("/ws", serveWs)
 }
 
 func main() {
+	fmt.Println("Start App")
 	setupRoutes()
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
